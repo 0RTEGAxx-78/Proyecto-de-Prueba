@@ -1,0 +1,546 @@
+import pygame
+import random
+import math
+import sys
+
+# Inicializar Pygame
+pygame.init()
+
+# Constantes
+ANCHO = 800
+ALTO = 600
+FPS = 60
+
+# Colores
+NEGRO = (0, 0, 0)
+BLANCO = (255, 255, 255)
+ROJO = (255, 0, 0)
+VERDE = (0, 255, 0)
+AZUL = (0, 0, 255)
+AMARILLO = (255, 255, 0)
+GRIS = (128, 128, 128)
+
+# Estados del juego
+MENU = 0
+JUGANDO = 1
+GAME_OVER = 2
+PAUSADO = 3
+
+class Jugador:
+    def __init__(self, x, y):
+
+        self.x = x
+        self.y = y
+        self.velocidad = 5
+        self.vida = 100
+        self.vida_max = 100
+        self.radio = 20
+        self.ancho = 30
+        self.alto = 40
+        
+    def mover(self, teclas):
+        if teclas[pygame.K_w] or teclas[pygame.K_UP]:
+            if self.y > self.alto//2:
+                self.y -= self.velocidad
+        if teclas[pygame.K_s] or teclas[pygame.K_DOWN]:
+            if self.y < ALTO - self.alto//2:
+                self.y += self.velocidad
+        if teclas[pygame.K_a] or teclas[pygame.K_LEFT]:
+            if self.x > self.ancho//2:
+                self.x -= self.velocidad
+        if teclas[pygame.K_d] or teclas[pygame.K_RIGHT]:
+            if self.x < ANCHO - self.ancho//2:
+                self.x += self.velocidad
+    
+    def disparar(self, mouse_x, mouse_y):
+        dx = mouse_x - self.x
+        dy = mouse_y - self.y
+        distancia = math.sqrt(dx * dx + dy * dy)
+        if distancia > 0:
+            dx = dx / distancia
+            dy = dy / distancia
+            return Bala(self.x, self.y, dx, dy)
+        return None
+    
+    def recibir_dano(self, dano):
+        self.vida -= dano
+        if self.vida < 0:
+            self.vida = 0
+    
+    def esta_vivo(self):
+        return self.vida > 0
+    
+    def dibujar_guerrero(self, pantalla):
+        # Cuerpo
+        cuerpo_rect = pygame.Rect(self.x - 8, self.y - 5, 16, 20)
+        pygame.draw.rect(pantalla, (100, 50, 0), cuerpo_rect)  # Marrón para armadura
+        
+        # Cabeza
+        pygame.draw.circle(pantalla, (255, 220, 177), (int(self.x), int(self.y - 12)), 8)
+        
+        # Casco/corona
+        casco_points = [
+            (self.x - 10, self.y - 18),
+            (self.x - 5, self.y - 23),
+            (self.x, self.y - 20),
+            (self.x + 5, self.y - 23),
+            (self.x + 10, self.y - 18)
+        ]
+        pygame.draw.polygon(pantalla, (150, 150, 150), casco_points)
+        
+        # Ojos
+        pygame.draw.circle(pantalla, NEGRO, (int(self.x - 3), int(self.y - 12)), 1)
+        pygame.draw.circle(pantalla, NEGRO, (int(self.x + 3), int(self.y - 12)), 1)
+        
+        # Brazos
+        pygame.draw.circle(pantalla, (255, 220, 177), (int(self.x - 12), int(self.y - 2)), 4)
+        pygame.draw.circle(pantalla, (255, 220, 177), (int(self.x + 12), int(self.y - 2)), 4)
+        
+        # Arma (espada en la mano derecha)
+        pygame.draw.line(pantalla, (192, 192, 192), (self.x + 12, self.y - 2), (self.x + 18, self.y - 15), 2)
+        pygame.draw.circle(pantalla, (139, 69, 19), (int(self.x + 12), int(self.y - 2)), 2)
+        
+        # Piernas
+        pygame.draw.circle(pantalla, (255, 220, 177), (int(self.x - 5), int(self.y + 18)), 4)
+        pygame.draw.circle(pantalla, (255, 220, 177), (int(self.x + 5), int(self.y + 18)), 4)
+        
+        # Botas
+        pygame.draw.rect(pantalla, (139, 69, 19), (self.x - 8, self.y + 20, 6, 4))
+        pygame.draw.rect(pantalla, (139, 69, 19), (self.x + 2, self.y + 20, 6, 4))
+    
+    def dibujar(self, pantalla):
+        self.dibujar_guerrero(pantalla)
+        # Barra de vida
+        barra_ancho = 40
+        barra_alto = 6
+        porcentaje_vida = self.vida / self.vida_max
+        pygame.draw.rect(pantalla, ROJO, (self.x - barra_ancho//2, self.y - 35, barra_ancho, barra_alto))
+        pygame.draw.rect(pantalla, VERDE, (self.x - barra_ancho//2, self.y - 35, barra_ancho * porcentaje_vida, barra_alto))
+
+class Zombie:
+    def __init__(self, x, y, velocidad):
+
+        self.x = x
+        self.y = y
+        self.velocidad = velocidad
+        self.vida = 30
+        self.radio = 15
+        self.ancho = 25
+        self.alto = 35
+        self.dano = 20
+        self.animacion_contador = 0
+        
+    def mover_hacia_jugador(self, jugador_x, jugador_y):
+        dx = jugador_x - self.x
+        dy = jugador_y - self.y
+        distancia = math.sqrt(dx * dx + dy * dy)
+        if distancia > 0:
+            dx = dx / distancia
+            dy = dy / distancia
+            self.x += dx * self.velocidad
+            self.y += dy * self.velocidad
+        self.animacion_contador += 1
+    
+    def colisiona_con(self, x, y, radio):
+        dx = x - self.x
+        dy = y - self.y
+        distancia = math.sqrt(dx * dx + dy * dy)
+        return distancia < (self.radio + radio)
+    
+    def recibir_dano(self, dano):
+        self.vida -= dano
+        return self.vida <= 0
+    
+    def dibujar_zombie(self, pantalla):
+        # Cuerpo zombie (más delgado y descompuesto)
+        cuerpo_rect = pygame.Rect(self.x - 7, self.y - 3, 14, 18)
+        pygame.draw.rect(pantalla, (50, 80, 50), cuerpo_rect)  # Verde oscuro
+        
+        # Cabeza zombie
+        pygame.draw.circle(pantalla, (80, 120, 80), (int(self.x), int(self.y - 10)), 7)
+        
+        # Ojos rojos brillantes
+        pygame.draw.circle(pantalla, ROJO, (int(self.x - 3), int(self.y - 10)), 2)
+        pygame.draw.circle(pantalla, ROJO, (int(self.x + 3), int(self.y - 10)), 2)
+        pygame.draw.circle(pantalla, (255, 100, 100), (int(self.x - 3), int(self.y - 10)), 1)
+        pygame.draw.circle(pantalla, (255, 100, 100), (int(self.x + 3), int(self.y - 10)), 1)
+        
+        # Boca zombie (línea irregular)
+        pygame.draw.line(pantalla, (139, 0, 0), (self.x - 4, self.y - 6), (self.x + 4, self.y - 6), 2)
+        
+        # Cabello desgreñado
+        cabello_points = [
+            (self.x - 8, self.y - 15),
+            (self.x - 4, self.y - 18),
+            (self.x, self.y - 16),
+            (self.x + 4, self.y - 19),
+            (self.x + 8, self.y - 15)
+        ]
+        pygame.draw.polygon(pantalla, (40, 40, 40), cabello_points)
+        
+        # Brazos zombie (con animación de caminar)
+        offset_brazo = int(3 * math.sin(self.animacion_contador * 0.2))
+        pygame.draw.circle(pantalla, (80, 120, 80), (int(self.x - 10), int(self.y + offset_brazo)), 3)
+        pygame.draw.circle(pantalla, (80, 120, 80), (int(self.x + 10), int(self.y - offset_brazo)), 3)
+        
+        # Piernas zombie (con animación)
+        offset_pierna = int(2 * math.sin(self.animacion_contador * 0.3))
+        pygame.draw.circle(pantalla, (80, 120, 80), (int(self.x - 4), int(self.y + 15 + offset_pierna)), 3)
+        pygame.draw.circle(pantalla, (80, 120, 80), (int(self.x + 4), int(self.y + 15 - offset_pierna)), 3)
+        
+        # Efectos de descomposición (manchas)
+        pygame.draw.circle(pantalla, (40, 60, 40), (int(self.x - 2), int(self.y + 2)), 1)
+        pygame.draw.circle(pantalla, (40, 60, 40), (int(self.x + 3), int(self.y - 2)), 1)
+    
+    def dibujar(self, pantalla):
+        self.dibujar_zombie(pantalla)
+
+class Bala:
+    def __init__(self, x, y, dx, dy):
+
+        self.x = x
+        self.y = y
+        self.dx = dx
+        self.dy = dy
+        self.velocidad = 10
+        self.radio = 4
+        self.dano = 25
+        
+    def mover(self):
+        self.x += self.dx * self.velocidad
+        self.y += self.dy * self.velocidad
+    
+    def esta_fuera_pantalla(self):
+        return (self.x < 0 or self.x > ANCHO or 
+                self.y < 0 or self.y > ALTO)
+    
+    def colisiona_con(self, x, y, radio):
+        dx = x - self.x
+        dy = y - self.y
+        distancia = math.sqrt(dx * dx + dy * dy)
+        return distancia < (self.radio + radio)
+    
+    def dibujar_proyectil(self, pantalla):
+        # Núcleo de la bala
+        pygame.draw.circle(pantalla, (255, 215, 0), (int(self.x), int(self.y)), self.radio)  # Dorado
+        pygame.draw.circle(pantalla, (255, 255, 0), (int(self.x), int(self.y)), self.radio - 1)  # Amarillo interior
+        
+        # Brillo
+        pygame.draw.circle(pantalla, BLANCO, (int(self.x - 1), int(self.y - 1)), 1)
+        
+        # Rastro de energía
+        for i in range(3):
+            trail_x = self.x - (self.dx * i * 2)
+            trail_y = self.y - (self.dy * i * 2)
+            alpha = 255 - (i * 60)
+            if alpha > 0:
+                trail_surface = pygame.Surface((6, 6))
+                trail_surface.set_alpha(alpha)
+                trail_surface.fill((255, 255, 0))
+                pantalla.blit(trail_surface, (trail_x - 3, trail_y - 3))
+    
+    def dibujar(self, pantalla):
+        self.dibujar_proyectil(pantalla)
+
+class Juego:
+    def __init__(self):
+
+        self.pantalla = pygame.display.set_mode((ANCHO, ALTO))
+        pygame.display.set_caption("Guerrero vs Zombies")
+        self.reloj = pygame.time.Clock()
+        self.estado = MENU
+        self.dificultad = 1
+        self.jugador = None
+        self.zombies = []
+        self.balas = []
+        self.puntos = 0
+        self.oleada = 1
+        self.zombies_por_oleada = 5
+        self.tiempo_ultima_oleada = 0
+        self.fuente = pygame.font.Font(None, 36)
+        self.fuente_grande = pygame.font.Font(None, 72)
+        self.tiempo_ultimo_disparo = 0
+        self.retraso_disparo = 200  # milisegundos
+        
+    def configurar_dificultad(self, nivel):
+        self.dificultad = nivel
+        if nivel == 1:  # Fácil
+            self.zombies_por_oleada = 3
+            self.velocidad_zombie = 1
+        elif nivel == 2:  # Normal
+            self.zombies_por_oleada = 5
+            self.velocidad_zombie = 1.5
+        else:  # Difícil
+            self.zombies_por_oleada = 7
+            self.velocidad_zombie = 2
+    
+    def iniciar_juego(self):
+        self.jugador = Jugador(ANCHO // 2, ALTO // 2)
+        self.zombies = []
+        self.balas = []
+        self.puntos = 0
+        self.oleada = 1
+        self.crear_oleada_zombies()
+        self.estado = JUGANDO
+        
+    def crear_zombie_random(self):
+        lado = random.randint(0, 3)
+        if lado == 0:  # Arriba
+            x = random.randint(0, ANCHO)
+            y = -20
+        elif lado == 1:  # Derecha
+            x = ANCHO + 20
+            y = random.randint(0, ALTO)
+        elif lado == 2:  # Abajo
+            x = random.randint(0, ANCHO)
+            y = ALTO + 20
+        else:  # Izquierda
+            x = -20
+            y = random.randint(0, ALTO)
+        
+        return Zombie(x, y, self.velocidad_zombie)
+    
+    def crear_oleada_zombies(self):
+        cantidad = self.zombies_por_oleada + (self.oleada - 1)
+        for _ in range(cantidad):
+            zombie = self.crear_zombie_random()
+            self.zombies.append(zombie)
+    
+    def manejar_eventos(self):
+        for evento in pygame.event.get():
+            if evento.type == pygame.QUIT:
+                return False
+            
+            if evento.type == pygame.KEYDOWN:
+                if self.estado == MENU:
+                    if evento.key == pygame.K_1:
+                        self.configurar_dificultad(1)
+                        self.iniciar_juego()
+                    elif evento.key == pygame.K_2:
+                        self.configurar_dificultad(2)
+                        self.iniciar_juego()
+                    elif evento.key == pygame.K_3:
+                        self.configurar_dificultad(3)
+                        self.iniciar_juego()
+                    elif evento.key == pygame.K_ESCAPE:
+                        return False
+                
+                elif self.estado == JUGANDO:
+                    if evento.key == pygame.K_p:
+                        self.estado = PAUSADO
+                    elif evento.key == pygame.K_ESCAPE:
+                        self.estado = MENU
+                
+                elif self.estado == PAUSADO:
+                    if evento.key == pygame.K_p:
+                        self.estado = JUGANDO
+                    elif evento.key == pygame.K_ESCAPE:
+                        self.estado = MENU
+                
+                elif self.estado == GAME_OVER:
+                    if evento.key == pygame.K_r:
+                        self.iniciar_juego()
+                    elif evento.key == pygame.K_m:
+                        self.estado = MENU
+                    elif evento.key == pygame.K_ESCAPE:
+                        return False
+            
+            if evento.type == pygame.MOUSEBUTTONDOWN and self.estado == JUGANDO:
+                if evento.button == 1:  # Clic izquierdo
+                    tiempo_actual = pygame.time.get_ticks()
+                    if tiempo_actual - self.tiempo_ultimo_disparo > self.retraso_disparo:
+                        mouse_x, mouse_y = pygame.mouse.get_pos()
+                        bala = self.jugador.disparar(mouse_x, mouse_y)
+                        if bala:
+                            self.balas.append(bala)
+                            self.tiempo_ultimo_disparo = tiempo_actual
+        
+        return True
+    
+    def actualizar_juego(self):
+        if self.estado != JUGANDO:
+            return
+        
+        # Mover jugador
+        teclas = pygame.key.get_pressed()
+        self.jugador.mover(teclas)
+        
+        # Mover balas
+        for bala in self.balas[:]:
+            bala.mover()
+            if bala.esta_fuera_pantalla():
+                self.balas.remove(bala)
+        
+        # Mover zombies
+        for zombie in self.zombies:
+            zombie.mover_hacia_jugador(self.jugador.x, self.jugador.y)
+        
+        # Colisiones bala-zombie
+        for bala in self.balas[:]:
+            for zombie in self.zombies[:]:
+                if bala.colisiona_con(zombie.x, zombie.y, zombie.radio):
+                    if zombie.recibir_dano(bala.dano):
+                        self.zombies.remove(zombie)
+                        self.puntos += 10
+                    self.balas.remove(bala)
+                    break
+        
+        # Colisiones zombie-jugador
+        for zombie in self.zombies:
+            if zombie.colisiona_con(self.jugador.x, self.jugador.y, self.jugador.radio):
+                self.jugador.recibir_dano(zombie.dano)
+                if not self.jugador.esta_vivo():
+                    self.estado = GAME_OVER
+                    return
+        
+        # Verificar si quedan zombies
+        if len(self.zombies) == 0:
+            self.oleada += 1
+            self.crear_oleada_zombies()
+    
+    def dibujar_menu(self):
+        self.pantalla.fill(NEGRO)
+        
+        titulo = self.fuente_grande.render("GUERRERO vs ZOMBIES", True, BLANCO)
+        rect_titulo = titulo.get_rect(center=(ANCHO//2, 150))
+        self.pantalla.blit(titulo, rect_titulo)
+        
+        instrucciones = [
+            "Selecciona la dificultad:",
+            "",
+            "1 - FACIL (3 zombies por oleada)",
+            "2 - NORMAL (5 zombies por oleada)", 
+            "3 - DIFICIL (7 zombies por oleada)",
+            "",
+            "ESCAPE - Salir"
+        ]
+        
+        y = 250
+        for linea in instrucciones:
+            if linea:
+                texto = self.fuente.render(linea, True, BLANCO)
+                rect_texto = texto.get_rect(center=(ANCHO//2, y))
+                self.pantalla.blit(texto, rect_texto)
+            y += 40
+    
+    def dibujar_juego(self):
+        # Fondo con textura
+        self.pantalla.fill((20, 40, 20))  # Verde muy oscuro para ambiente nocturno
+        
+        # Dibujar algunas estrellas en el fondo
+        for i in range(30):
+            x = (i * 73) % ANCHO
+            y = (i * 37) % ALTO
+            pygame.draw.circle(self.pantalla, (200, 200, 255), (x, y), 1)
+        
+        # Dibujar jugador
+        self.jugador.dibujar(self.pantalla)
+        
+        # Dibujar zombies
+        for zombie in self.zombies:
+            zombie.dibujar(self.pantalla)
+        
+        # Dibujar balas
+        for bala in self.balas:
+            bala.dibujar(self.pantalla)
+        
+        # Dibujar HUD
+        texto_puntos = self.fuente.render("Puntos: " + str(self.puntos), True, BLANCO)
+        self.pantalla.blit(texto_puntos, (10, 10))
+        
+        texto_oleada = self.fuente.render("Oleada: " + str(self.oleada), True, BLANCO)
+        self.pantalla.blit(texto_oleada, (10, 50))
+        
+        texto_zombies = self.fuente.render("Zombies: " + str(len(self.zombies)), True, BLANCO)
+        self.pantalla.blit(texto_zombies, (10, 90))
+        
+        dificultades = {1: "FACIL", 2: "NORMAL", 3: "DIFICIL"}
+        texto_dif = self.fuente.render("Dificultad: " + dificultades[self.dificultad], True, BLANCO)
+        self.pantalla.blit(texto_dif, (10, 130))
+        
+        # Instrucciones
+        texto_pausa = pygame.font.Font(None, 24).render("P - Pausar | ESC - Menu", True, GRIS)
+        self.pantalla.blit(texto_pausa, (ANCHO - 200, 10))
+        
+        texto_mover = pygame.font.Font(None, 24).render("WASD/Flechas - Mover", True, GRIS)
+        self.pantalla.blit(texto_mover, (ANCHO - 200, 30))
+        
+        texto_disparar = pygame.font.Font(None, 24).render("Clic - Disparar", True, GRIS)
+        self.pantalla.blit(texto_disparar, (ANCHO - 200, 50))
+    
+    def dibujar_pausa(self):
+        # Dibujar juego con transparencia
+        self.dibujar_juego()
+        
+        # Overlay semi-transparente
+        overlay = pygame.Surface((ANCHO, ALTO))
+        overlay.set_alpha(128)
+        overlay.fill(NEGRO)
+        self.pantalla.blit(overlay, (0, 0))
+        
+        texto_pausa = self.fuente_grande.render("PAUSADO", True, BLANCO)
+        rect_pausa = texto_pausa.get_rect(center=(ANCHO//2, ALTO//2 - 50))
+        self.pantalla.blit(texto_pausa, rect_pausa)
+        
+        texto_continuar = self.fuente.render("P - Continuar | ESC - Menu", True, BLANCO)
+        rect_continuar = texto_continuar.get_rect(center=(ANCHO//2, ALTO//2 + 20))
+        self.pantalla.blit(texto_continuar, rect_continuar)
+    
+    def dibujar_game_over(self):
+        self.pantalla.fill(NEGRO)
+        
+        titulo = self.fuente_grande.render("GAME OVER", True, ROJO)
+        rect_titulo = titulo.get_rect(center=(ANCHO//2, 200))
+        self.pantalla.blit(titulo, rect_titulo)
+        
+        texto_puntos = self.fuente.render("Puntos Finales: " + str(self.puntos), True, BLANCO)
+        rect_puntos = texto_puntos.get_rect(center=(ANCHO//2, 280))
+        self.pantalla.blit(texto_puntos, rect_puntos)
+        
+        texto_oleadas = self.fuente.render("Oleadas Sobrevividas: " + str(self.oleada - 1), True, BLANCO)
+        rect_oleadas = texto_oleadas.get_rect(center=(ANCHO//2, 320))
+        self.pantalla.blit(texto_oleadas, rect_oleadas)
+        
+        opciones = [
+            "R - Jugar de nuevo",
+            "M - Menu principal", 
+            "ESC - Salir"
+        ]
+        
+        y = 380
+        for opcion in opciones:
+            texto = self.fuente.render(opcion, True, BLANCO)
+            rect_texto = texto.get_rect(center=(ANCHO//2, y))
+            self.pantalla.blit(texto, rect_texto)
+            y += 40
+    
+    def ejecutar(self):
+        ejecutando = True
+        
+        while ejecutando:
+            ejecutando = self.manejar_eventos()
+            
+            self.actualizar_juego()
+            
+            # Dibujar según el estado
+            if self.estado == MENU:
+                self.dibujar_menu()
+            elif self.estado == JUGANDO:
+                self.dibujar_juego()
+            elif self.estado == PAUSADO:
+                self.dibujar_pausa()
+            elif self.estado == GAME_OVER:
+                self.dibujar_game_over()
+            
+            pygame.display.flip()
+            self.reloj.tick(FPS)
+        
+        pygame.quit()
+        sys.exit()
+
+def main():
+    juego = Juego()
+    juego.ejecutar()
+
+if __name__ == "__main__":
+    main()
